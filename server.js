@@ -3,20 +3,26 @@ const express = require("express");
 const app = express();
 
 app.get("/catalog", async (req, res) => {
-	try {
-		const url = "https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=10"
+    try {
 
-		const response = await fetch(url);
-		const data = await response.json();
+        const url = "https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=30&SortType=3"
 
-		const ids = data.data.map(item => item.id);
+        const response = await fetch(url);
+        const data = await response.json();
 
-		res.json(ids);
+        const ids = data.data
+            .filter(item =>
+                item.itemType === "Asset" &&
+                item.creatorName !== "Roblox"
+            )
+            .map(item => item.id);
 
-	} catch (err) {
-		console.error(err);
-		res.status(500).json({ error: "Error al obtener datos" });
-	}
+        res.json(ids);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Error" });
+    }
 });
 
 app.listen(3000, () => console.log("Servidor activo en puerto 3000"));
