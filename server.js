@@ -5,7 +5,11 @@ const app = express();
 app.get("/catalog", async (req, res) => {
     try {
 
-        const url = "https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=30&SortType=3"
+        // 🔥 cambia resultados cada vez
+        const sorts = [3, 5, 1];
+        const randomSort = sorts[Math.floor(Math.random() * sorts.length)];
+
+        const url = `https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=50&SortType=${randomSort}`
 
         const response = await fetch(url);
         const data = await response.json();
@@ -25,4 +29,5 @@ app.get("/catalog", async (req, res) => {
     }
 });
 
-app.listen(3000, () => console.log("Servidor activo en puerto 3000"));
+app.listen(3000, () => console.log("Servidor activo"));
+
