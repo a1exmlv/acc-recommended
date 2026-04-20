@@ -95,5 +95,13 @@ app.get("/catalog", async (req, res) => {
 app.get("/", (req, res) => {
     res.send("Proxy infinito PRO 🚀");
 });
-
+// Mantiene Render despierto cada 14 minutos
+setInterval(async () => {
+    try {
+        await fetch("https://acc-recommended.onrender.com/catalog")
+        console.log("Keep-alive ping OK")
+    } catch(e) {
+        console.log("Keep-alive falló:", e.message)
+    }
+}, 14 * 60 * 1000)
 app.listen(3000, () => console.log("Servidor activo en puerto 3000"));
