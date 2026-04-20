@@ -9,7 +9,7 @@ app.get("/catalog", async (req, res) => {
         const sorts = [3, 5, 1];
         const randomSort = sorts[Math.floor(Math.random() * sorts.length)];
 
-        const url = `https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=50&SortType=${randomSort}`
+      const url = `https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=60&SortType=${Math.floor(Math.random()*5)}`
 
         const response = await fetch(url);
         const data = await response.json();
