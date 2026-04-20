@@ -5,15 +5,17 @@ const app = express();
 app.get("/catalog", async (req, res) => {
     try {
 
-        // 🔥 cambia resultados cada vez
-        const sorts = [3, 5, 1];
-        const randomSort = sorts[Math.floor(Math.random() * sorts.length)];
+        // 🔥 diferentes tipos de orden para variar resultados
+        const sortTypes = [1, 2, 3, 5];
+        const randomSort = sortTypes[Math.floor(Math.random() * sortTypes.length)];
 
-      const url = `https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=60&SortType=${Math.floor(Math.random()*5)}`
+        // 🔥 endpoint del catálogo
+        const url = `https://catalog.roblox.com/v1/search/items/details?Category=11&Limit=60&SortType=${randomSort}`;
 
         const response = await fetch(url);
         const data = await response.json();
 
+        // 🔥 filtrar accesorios reales y evitar solo Roblox oficial
         const ids = data.data
             .filter(item =>
                 item.itemType === "Asset" &&
@@ -21,13 +23,23 @@ app.get("/catalog", async (req, res) => {
             )
             .map(item => item.id);
 
+        // 🔥 shuffle (mezcla real)
+        for (let i = ids.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [ids[i], ids[j]] = [ids[j], ids[i]];
+        }
+
         res.json(ids);
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Error" });
+        console.error("Error en proxy:", err);
+        res.status(500).json({ error: "Error al obtener catálogo" });
     }
 });
 
-app.listen(3000, () => console.log("Servidor activo"));
+// 🔥 ruta base opcional para probar
+app.get("/", (req, res) => {
+    res.send("Proxy funcionando 🚀");
+});
 
+app.listen(3000, () => console.log("Servidor activo en puerto 3000"));
