@@ -2,15 +2,14 @@ const express = require("express");
 const app = express();
 
 const HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Origin": "https://www.roblox.com",
-    "Referer": "https://www.roblox.com/"
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
 };
 
-const FETCH_COOLDOWN = 1000;
+const GROUP_ID_DEFAULT = 36024472;
+
 let lastFetchTime = 0;
+const FETCH_COOLDOWN = 1200;
 
 const groupCache = new Map();
 const CACHE_TTL = 60 * 1000;
@@ -20,172 +19,129 @@ const CACHE_TTL = 60 * 1000;
 // FETCH
 // =========================================================
 
-async function safeFetch(url, retries = 3) {
+async function safeFetch(url) {
 
-    for (let i = 0; i <= retries; i++) {
+    const now = Date.now();
 
-        const now = Date.now();
+    const wait =
+        FETCH_COOLDOWN -
+        (now - lastFetchTime);
 
-        const wait =
-            FETCH_COOLDOWN -
-            (now - lastFetchTime);
-
-        if (wait > 0) {
-            await new Promise(
-                resolve => setTimeout(resolve, wait)
-            );
-        }
-
-        lastFetchTime = Date.now();
-
-        try {
-
-            const response =
-                await fetch(url, {
-                    headers: HEADERS
-                });
-
-            console.log(
-                "Fetch → status:",
-                response.status
-            );
-
-            if (response.ok) {
-                return response;
-            }
-
-            if (response.status === 429) {
-
-                console.log(
-                    "Rate limit, esperando 3s..."
-                );
-
-                await new Promise(
-                    resolve => setTimeout(resolve, 3000)
-                );
-
-            }
-
-        } catch (error) {
-
-            console.log(
-                "Error intento:",
-                error.message
-            );
-
-        }
-
+    if (wait > 0) {
+        await new Promise(
+            resolve => setTimeout(resolve, wait)
+        );
     }
 
-    return null;
+    lastFetchTime = Date.now();
+
+    try {
+
+        console.log("Fetch →", url);
+
+        const response =
+            await fetch(url, {
+                headers: HEADERS
+            });
+
+        console.log(
+            "Fetch → status:",
+            response.status
+        );
+
+        if (response.ok) {
+            return response;
+        }
+
+        return null;
+
+    } catch (error) {
+
+        console.log(
+            "Fetch error:",
+            error.message
+        );
+
+        return null;
+
+    }
 }
 
 
 // =========================================================
-// OBTENER CATEGORÍA
+// OBTENER PRODUCTOS
 // =========================================================
 
-async function getCategoryItems(
+async function getItems(
     groupId,
     category
 ) {
 
-    const allItems = [];
-
-    let cursor = "";
-
-
-    for (let page = 0; page < 5; page++) {
-
-        let url =
-            "https://catalog.roblox.com/v1/search/items/details"
-            + "?Category=" + category
-            + "&CreatorType=2"
-            + "&CreatorTargetId=" + groupId
-            + "&SortType=3"
-            + "&SortAggregation=5"
-            + "&Limit=120";
+    const url =
+        "https://catalog.roblox.com/v1/search/items/details"
+        + "?Category=" + category
+        + "&CreatorType=2"
+        + "&CreatorTargetId=" + groupId
+        + "&SortType=3"
+        + "&SortAggregation=5"
+        + "&Limit=30";
 
 
-        if (cursor) {
-
-            url +=
-                "&Cursor=" +
-                encodeURIComponent(cursor);
-
-        }
+    const response =
+        await safeFetch(url);
 
 
-        const response =
-            await safeFetch(url);
+    if (!response) {
+        return [];
+    }
 
 
-        if (!response) {
-            break;
-        }
+    let data;
 
+    try {
 
-        const text =
-            await response.text();
+        data =
+            await response.json();
 
+    } catch (error) {
 
-        let data;
+        console.log(
+            "JSON error:",
+            error.message
+        );
 
-        try {
-
-            data = JSON.parse(text);
-
-        } catch (error) {
-
-            console.log(
-                "JSON error:",
-                error.message
-            );
-
-            break;
-        }
-
-
-        const items =
-            Array.isArray(data?.data)
-                ? data.data
-                : [];
-
-
-        for (const item of items) {
-
-            if (
-                item?.itemType === "Asset"
-                && item?.id
-            ) {
-
-                allItems.push({
-                    Id: Number(item.id),
-                    AssetType: Number(item.assetType || 0)
-                });
-
-            }
-
-        }
-
-
-        cursor =
-            data?.nextPageCursor || "";
-
-
-        if (!cursor) {
-            break;
-        }
+        return [];
 
     }
 
 
-    return allItems;
+    const items =
+        Array.isArray(data?.data)
+            ? data.data
+            : [];
+
+
+    return items
+        .filter(
+            item =>
+                item &&
+                item.itemType === "Asset" &&
+                item.id
+        )
+        .map(
+            item => ({
+                Id: Number(item.id),
+                AssetType: Number(
+                    item.assetType || 0
+                )
+            })
+        );
+
 }
 
 
 // =========================================================
-// CATÁLOGO DEL GRUPO
+// CATÁLOGO
 // =========================================================
 
 app.get("/catalog", async (req, res) => {
@@ -193,22 +149,9 @@ app.get("/catalog", async (req, res) => {
     try {
 
         const groupId =
-            Number(req.query.groupId);
-
-
-        if (
-            !groupId ||
-            !Number.isInteger(groupId) ||
-            groupId <= 0
-        ) {
-
-            return res.status(400).json({
-                count: 0,
-                items: [],
-                error: "groupId inválido"
-            });
-
-        }
+            Number(
+                req.query.groupId
+            ) || GROUP_ID_DEFAULT;
 
 
         // CACHE
@@ -219,14 +162,13 @@ app.get("/catalog", async (req, res) => {
 
         if (
             cached &&
-            Date.now() - cached.time < CACHE_TTL &&
-            cached.items.length > 0
+            Date.now() - cached.time < CACHE_TTL
         ) {
 
             console.log(
                 "Cache:",
-                groupId,
-                cached.items.length
+                cached.items.length,
+                "items"
             );
 
             return res.json({
@@ -243,16 +185,34 @@ app.get("/catalog", async (req, res) => {
         );
 
 
-        // Clothing + Accessories
+        // =================================================
+        // ROPA
+        // =================================================
 
-        const [clothing, accessories] =
-            await Promise.all([
-                getCategoryItems(groupId, 3),
-                getCategoryItems(groupId, 11)
-            ]);
+        const clothing =
+            await getItems(
+                groupId,
+                3
+            );
 
 
-        const uniqueMap = new Map();
+        // =================================================
+        // ACCESORIOS
+        // =================================================
+
+        const accessories =
+            await getItems(
+                groupId,
+                11
+            );
+
+
+        // =================================================
+        // UNIR
+        // =================================================
+
+        const map =
+            new Map();
 
 
         for (const item of [
@@ -260,9 +220,9 @@ app.get("/catalog", async (req, res) => {
             ...accessories
         ]) {
 
-            if (!uniqueMap.has(item.Id)) {
+            if (!map.has(item.Id)) {
 
-                uniqueMap.set(
+                map.set(
                     item.Id,
                     item
                 );
@@ -272,16 +232,18 @@ app.get("/catalog", async (req, res) => {
         }
 
 
-        const unique =
+        const items =
             Array.from(
-                uniqueMap.values()
+                map.values()
             );
 
 
+        // =================================================
         // MEZCLAR
+        // =================================================
 
         for (
-            let i = unique.length - 1;
+            let i = items.length - 1;
             i > 0;
             i--
         ) {
@@ -291,26 +253,29 @@ app.get("/catalog", async (req, res) => {
                     Math.random() * (i + 1)
                 );
 
+
             [
-                unique[i],
-                unique[j]
+                items[i],
+                items[j]
             ] =
             [
-                unique[j],
-                unique[i]
+                items[j],
+                items[i]
             ];
 
         }
 
 
+        // =================================================
         // CACHE
+        // =================================================
 
-        if (unique.length > 0) {
+        if (items.length > 0) {
 
             groupCache.set(
                 groupId,
                 {
-                    items: unique,
+                    items: items,
                     time: Date.now()
                 }
             );
@@ -330,49 +295,28 @@ app.get("/catalog", async (req, res) => {
 
         console.log(
             "Total:",
-            unique.length
+            items.length
         );
 
 
         return res.json({
-            count: unique.length,
-            items: unique
+            count: items.length,
+            items: items
         });
 
 
     } catch (error) {
 
         console.error(
-            "Error proxy:",
+            "Proxy error:",
             error
         );
-
-
-        const groupId =
-            Number(req.query.groupId);
-
-
-        const cached =
-            groupCache.get(groupId);
-
-
-        if (
-            cached &&
-            cached.items.length > 0
-        ) {
-
-            return res.json({
-                count: cached.items.length,
-                items: cached.items
-            });
-
-        }
 
 
         return res.status(500).json({
             count: 0,
             items: [],
-            error: "Error obteniendo catálogo"
+            error: error.message
         });
 
     }
@@ -387,7 +331,7 @@ app.get("/catalog", async (req, res) => {
 app.get("/", (req, res) => {
 
     res.send(
-        "Proxy PRO 🚀 | Group Outfit Generator"
+        "Proxy PRO 🚀 | Group Catalog"
     );
 
 });
@@ -418,7 +362,7 @@ setInterval(
 
 
 // =========================================================
-// SERVIDOR
+// SERVER
 // =========================================================
 
 app.listen(
