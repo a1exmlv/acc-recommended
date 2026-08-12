@@ -6,7 +6,7 @@ const HEADERS = {
     "Accept": "application/json"
 };
 
-const GROUP_ID_DEFAULT = 36024472;
+const DEFAULT_GROUP_ID = 36024472;
 
 let lastFetchTime = 0;
 const FETCH_COOLDOWN = 1200;
@@ -24,8 +24,7 @@ async function safeFetch(url) {
     const now = Date.now();
 
     const wait =
-        FETCH_COOLDOWN -
-        (now - lastFetchTime);
+        FETCH_COOLDOWN - (now - lastFetchTime);
 
     if (wait > 0) {
         await new Promise(
@@ -37,12 +36,9 @@ async function safeFetch(url) {
 
     try {
 
-        console.log("Fetch →", url);
-
-        const response =
-            await fetch(url, {
-                headers: HEADERS
-            });
+        const response = await fetch(url, {
+            headers: HEADERS
+        });
 
         console.log(
             "Fetch → status:",
@@ -63,80 +59,93 @@ async function safeFetch(url) {
         );
 
         return null;
-
     }
 }
 
 
 // =========================================================
-// OBTENER PRODUCTOS
+// OBTENER ACCESORIOS DEL GRUPO
 // =========================================================
 
-async function getItems(
-    groupId,
-    category
-) {
+async function getAccessories(groupId) {
 
-    const url =
-        "https://catalog.roblox.com/v1/search/items/details"
-        + "?Category=" + category
-        + "&CreatorType=2"
-        + "&CreatorTargetId=" + groupId
-        + "&SortType=3"
-        + "&SortAggregation=5"
-        + "&Limit=30";
+    const allItems = [];
+    let cursor = "";
 
+    for (let page = 0; page < 5; page++) {
 
-    const response =
-        await safeFetch(url);
+        let url =
+            "https://catalog.roblox.com/v1/search/items/details"
+            + "?Category=11"
+            + "&CreatorType=2"
+            + "&CreatorTargetId=" + groupId
+            + "&SortType=3"
+            + "&SortAggregation=5"
+            + "&Limit=30";
 
+        if (cursor) {
 
-    if (!response) {
-        return [];
-    }
+            url +=
+                "&Cursor=" +
+                encodeURIComponent(cursor);
 
+        }
 
-    let data;
+        const response =
+            await safeFetch(url);
 
-    try {
+        if (!response) {
+            break;
+        }
 
-        data =
-            await response.json();
+        let data;
 
-    } catch (error) {
+        try {
 
-        console.log(
-            "JSON error:",
-            error.message
-        );
+            data = await response.json();
 
-        return [];
+        } catch (error) {
 
-    }
+            console.log(
+                "JSON error:",
+                error.message
+            );
 
+            break;
+        }
 
-    const items =
-        Array.isArray(data?.data)
-            ? data.data
-            : [];
+        const items =
+            Array.isArray(data?.data)
+                ? data.data
+                : [];
 
+        for (const item of items) {
 
-    return items
-        .filter(
-            item =>
+            if (
                 item &&
                 item.itemType === "Asset" &&
                 item.id
-        )
-        .map(
-            item => ({
-                Id: Number(item.id),
-                AssetType: Number(
-                    item.assetType || 0
-                )
-            })
-        );
+            ) {
 
+                allItems.push({
+                    Id: Number(item.id),
+                    AssetType: Number(
+                        item.assetType || 0
+                    )
+                });
+
+            }
+        }
+
+        cursor =
+            data?.nextPageCursor || "";
+
+        if (!cursor) {
+            break;
+        }
+    }
+
+    return allItems;
 }
 
 
@@ -149,16 +158,11 @@ app.get("/catalog", async (req, res) => {
     try {
 
         const groupId =
-            Number(
-                req.query.groupId
-            ) || GROUP_ID_DEFAULT;
-
-
-        // CACHE
+            Number(req.query.groupId) ||
+            DEFAULT_GROUP_ID;
 
         const cached =
             groupCache.get(groupId);
-
 
         if (
             cached &&
@@ -168,57 +172,31 @@ app.get("/catalog", async (req, res) => {
             console.log(
                 "Cache:",
                 cached.items.length,
-                "items"
+                "accesorios"
             );
 
             return res.json({
                 count: cached.items.length,
                 items: cached.items
             });
-
         }
 
 
         console.log(
-            "Buscando productos del grupo:",
+            "Buscando accesorios del grupo:",
             groupId
         );
 
 
-        // =================================================
-        // ROPA
-        // =================================================
-
-        const clothing =
-            await getItems(
-                groupId,
-                3
-            );
-
-
-        // =================================================
-        // ACCESORIOS
-        // =================================================
-
         const accessories =
-            await getItems(
-                groupId,
-                11
-            );
+            await getAccessories(groupId);
 
 
-        // =================================================
-        // UNIR
-        // =================================================
+        // Eliminar duplicados
 
-        const map =
-            new Map();
+        const map = new Map();
 
-
-        for (const item of [
-            ...clothing,
-            ...accessories
-        ]) {
+        for (const item of accessories) {
 
             if (!map.has(item.Id)) {
 
@@ -228,7 +206,6 @@ app.get("/catalog", async (req, res) => {
                 );
 
             }
-
         }
 
 
@@ -238,9 +215,7 @@ app.get("/catalog", async (req, res) => {
             );
 
 
-        // =================================================
-        // MEZCLAR
-        // =================================================
+        // Mezclar aleatoriamente
 
         for (
             let i = items.length - 1;
@@ -253,7 +228,6 @@ app.get("/catalog", async (req, res) => {
                     Math.random() * (i + 1)
                 );
 
-
             [
                 items[i],
                 items[j]
@@ -262,13 +236,8 @@ app.get("/catalog", async (req, res) => {
                 items[j],
                 items[i]
             ];
-
         }
 
-
-        // =================================================
-        // CACHE
-        // =================================================
 
         if (items.length > 0) {
 
@@ -279,22 +248,11 @@ app.get("/catalog", async (req, res) => {
                     time: Date.now()
                 }
             );
-
         }
 
 
         console.log(
-            "Clothing:",
-            clothing.length
-        );
-
-        console.log(
-            "Accessories:",
-            accessories.length
-        );
-
-        console.log(
-            "Total:",
+            "Accesorios encontrados:",
             items.length
         );
 
@@ -312,15 +270,12 @@ app.get("/catalog", async (req, res) => {
             error
         );
 
-
         return res.status(500).json({
             count: 0,
             items: [],
             error: error.message
         });
-
     }
-
 });
 
 
@@ -331,7 +286,7 @@ app.get("/catalog", async (req, res) => {
 app.get("/", (req, res) => {
 
     res.send(
-        "Proxy PRO 🚀 | Group Catalog"
+        "Proxy PRO 🚀 | Group Accessories"
     );
 
 });
